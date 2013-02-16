@@ -22,6 +22,22 @@ import sublime_plugin
 try:         import nose
 except ImportError: nose = None
 
+#################################### EXPORTS ###################################
+
+__all__ =  ['PATH_ABSOLUTE',
+            'PATH_CONFIG_RELATIVE',
+            'PATH_ZIPFILE_PSEUDO',
+            'ST2',
+            'ST3',
+            'abs_path_to_open_file_path',
+            'decompose_package_file_path',
+            'package_file_binary_contents',
+            'package_file_contents',
+            'package_file_exists',
+            'package_file_path_to_open_file_path',
+            'platform_specifier',
+            'zipped_package_locations']
+
 ################################### CONSTANTS ##################################
 
 PREFIX_ZIP_PACKAGE_RELATIVE = re.compile("(?P<prefix>.*)/"
@@ -54,7 +70,7 @@ class bunch(dict):
         dict.__init__(self, *args, **kw)
         self.__dict__ = self
 
-def normed_platform():
+def platform_specifier():
     platform = sublime.platform().title()
     if platform == 'Osx': return 'OSX'
     return platform
@@ -81,10 +97,10 @@ def zip_path_components(pth):
     if m is not None:
         return m.groupdict()
 
-def decompose_path(pth):
+def decompose_package_file_path(pth):
     """
     
-    >>> tc = decompose_path
+    >>> tc = decompose_package_file_path
     >>> tc("Packages/Fool/one.py")
     ('Fool', 'one.py', 0, None)
     
@@ -102,7 +118,7 @@ def decompose_path(pth):
         pkg, relative = pth.split("/", 1)
         return pkg, relative, PATH_ABSOLUTE, sublime.packages_path()
 
-def open_file_path(fn):
+def abs_path_to_open_file_path(fn):
     """
     Formats a path as /C/some/path/on/windows/no/colon.txt that is suitable to
     be passed as the `file` arg to the `open_file` command.
@@ -112,11 +128,11 @@ def open_file_path(fn):
     fn = re.sub(r'\\', '/', fn)
     return fn
 
-def normalise_to_open_file_path(file_name):
+def package_file_path_to_open_file_path(file_name):
     """
     
     >>> pth = '/Packages/Vintage.sublime-package/Default (Linux).sublime-keymap'
-    >>> normalise_to_open_file_path(pth)
+    >>> package_file_path_to_open_file_path(pth)
     '${packages}/Vintage/Default (Linux).sublime-keymap'
     
     :file_name:
@@ -129,14 +145,14 @@ def normalise_to_open_file_path(file_name):
     
     """
 
-    pkg, relative, pth_type, _ = decompose_path(file_name)
-    return ( open_file_path(file_name) if pth_type is PATH_ABSOLUTE else
+    pkg, relative, pth_type, _ = decompose_package_file_path(file_name)
+    return ( abs_path_to_open_file_path(file_name) if pth_type is PATH_ABSOLUTE else
              "${packages}/%s/%s" % (pkg, relative) )
 
 ############################ PACKAGE_FILE_* HELPERS ############################
 
 def _package_file_helper(fn, encoding='utf-8', only_exists=False):
-    pkg, path, pth_type, _ = decompose_path(fn)
+    pkg, path, pth_type, _ = decompose_package_file_path(fn)
 
     if pth_type == PATH_CONFIG_RELATIVE:
         pkg_path = os.path.join(sublime.packages_path(), pkg)
@@ -231,7 +247,6 @@ def create_virtual_package_lookup():
 
     return dict(mapping)
 
-
 # TODO:Incomplete !!!!!
 def list_virtual_package_folder(merged_package_info, matcher=None):
     zip_file = merged_package_info['zip_path']
@@ -249,7 +264,7 @@ def list_virtual_package_folder(merged_package_info, matcher=None):
         if matcher is not None:
             if not matcher(f):
                 continue
-        
+
         f_info = contents[f]
         f_info.relative_name = f
         f_info.zip_path = os.path.join(zip_file, f)
@@ -317,7 +332,7 @@ def permute_selection(f, v, e):
             self.assertTrue(isinstance(ars, str))
 
     def test_decompose_path(self):
-        tc = decompose_path
+        tc = decompose_package_file_path
         aseq = self.assertEquals
 
         r1 = (tc("Packages/Fool/one.py"))
