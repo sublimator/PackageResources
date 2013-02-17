@@ -52,7 +52,9 @@ PATH_CONFIG_RELATIVE, PATH_ABSOLUTE, PATH_ZIPFILE_PSEUDO = range(3)
 ################################################################################
 """
 
-Brief:
+**(Non exhaustive)** Brief:
+
+@Efficient
 
 @Globbing a whole list of packages for files that match a pattern:
 
@@ -61,6 +63,10 @@ Brief:
     - @Listing contents of a Package, files of which may be spread across an
         a .sublime-package, with overrides in an actual folder in 
         sublime.packages_path()
+
+@Normalising paths to sublime style paths
+
+    - /C/windows/system32 
 
 """
 #################################### HELPERS ###################################
@@ -75,10 +81,11 @@ def platform_specifier():
     if platform == 'Osx': return 'OSX'
     return platform
 
+def executable_relative_packages():
+    return join(dirname(sublime.executable_path()), 'Packages')
+
 def zipped_package_locations():
-    near_executable          = join(dirname(sublime.executable_path()),
-                                    'Packages')
-    return [ sublime.installed_packages_path(), near_executable]
+    return [sublime.installed_packages_path(), executable_relative_packages()]
 
 ################################# PATH HELPERS #################################
 
@@ -156,33 +163,40 @@ def _package_file_helper(fn, encoding='utf-8', only_exists=False):
 
     if pth_type == PATH_CONFIG_RELATIVE:
         pkg_path = os.path.join(sublime.packages_path(), pkg)
-        abs_fn = os.path.join(pkg_path, path)
-    else:
-        abs_fn = fn
+        fn = os.path.join(pkg_path, path)
+        pth_type = PATH_ABSOLUTE
 
-    if os.path.exists(abs_fn):
-        if only_exists:
-            return True
+    if pth_type == PATH_ABSOLUTE:
+        if only_exists and os.path.exists(fn):
+            return True # could fall through to zip code
         else:
             if encoding is None: kw = dict(mode='rb')
             else:                kw = dict(mode='rU', encoding=encoding)
 
-            with codecs.open(abs_fn, **kw) as fh:
-                return fh.read()
+            try:
+                with codecs.open(fn, **kw) as fh:
+                    return fh.read()
+            except IOError:
+                if os.path.exists(fn):
+                    raise
 
     for base_pth in zipped_package_locations():
         zip_path = os.path.join(base_pth, pkg + '.sublime-package')
         if not os.path.exists(zip_path): continue
 
         with zipfile.ZipFile(zip_path, 'r') as zh:
-            if path in zh.namelist():
-                if only_exists:
-                    return True
-                else:
-                    text = bytes= zh.read(path)
-                    if encoding:
-                        text = bytes.decode('utf-8')
-                    return text
+            try:
+                zip_info = zh.getinfo(path)
+            except KeyError:
+                continue
+
+            if only_exists:
+                return True
+            else:
+                text = bytes = zh.read(zip_info)
+                if encoding:
+                    text = bytes.decode('utf-8')
+                return text
 
 def package_partial(**kw):
     return functools.partial(_package_file_helper, **kw)
@@ -247,7 +261,6 @@ def create_virtual_package_lookup():
 
     return dict(mapping)
 
-# TODO:Incomplete !!!!!
 def list_virtual_package_folder(merged_package_info, matcher=None):
     zip_file = merged_package_info['zip_path']
     folder = merged_package_info['folder_path']
@@ -261,10 +274,6 @@ def list_virtual_package_folder(merged_package_info, matcher=None):
                                           zip_path=False,
                                           folder_path=False ))
     for f in zip_files:
-        if matcher is not None:
-            if not matcher(f):
-                continue
-
         f_info = contents[f]
         f_info.relative_name = f
         f_info.zip_path = os.path.join(zip_file, f)
@@ -277,9 +286,13 @@ def list_virtual_package_folder(merged_package_info, matcher=None):
 
             for f in filenames:
                 relative_name = os.path.join(root[len(folder) + 1:], f)
+
                 f_info = contents[relative_name]
                 f_info.relative_name  = relative_name
                 f_info.folder_path  = os.path.join(root, f)
+
+    if matcher is not None:
+        contents = dict((k, v) for k,v in contents.items() if matcher(k))
 
     return contents
 
@@ -306,10 +319,18 @@ class Tests(unittest.TestCase):
         self.assertTrue(package_file_exists("Packages/Default/sort.py"))
 
     def test_package_file_contents(self):
+        # Relative path
         (package_file_contents (
                 "Packages/PackageResources/package_resources.py"))
 
+        # Absolute path
+        (package_file_contents(( sublime.packages_path() +
+                                "/PackageResources/package_resources.py")))
+
+
+        # Relative path to zip contents
         ars = package_file_contents("Packages/Default/sort.py")
+        nlen = len(ars)
 
         text="""\
 def permute_selection(f, v, e):
@@ -322,6 +343,12 @@ def permute_selection(f, v, e):
             self.assertTrue(isinstance(ars, str))
         else:
             self.assertTrue(isinstance(ars, unicode))
+
+        # Able to use PATH_ZIPFILE_PSEUDO (used by module.__file__)
+        a= len( (package_file_contents(( executable_relative_packages() +
+                                "/Default.sublime-package/sort.py"))))
+
+        self.assertEquals(a, nlen)
 
     def test_package_file_binary_contents(self):
         ars = package_file_binary_contents("Packages/Default/sort.py")
@@ -339,9 +366,9 @@ def permute_selection(f, v, e):
         r2 = (tc("/Packages/Default.sublime-package/nested/sort.py"))
         r3 = (tc(sublime.packages_path() + "/Package/Nested/asset.pth"))
 
-        aseq(r1, ('Fool', 'one.py',              PATH_CONFIG_RELATIVE, None))
-        aseq(r2, ('Default', 'nested/sort.py',   PATH_ZIPFILE_PSEUDO, '/Packages'))
-        aseq(r3, ('Package', 'Nested/asset.pth', PATH_ABSOLUTE, sublime.packages_path()))
+        aseq(r1[:-1], ('Fool', 'one.py',              PATH_CONFIG_RELATIVE))
+        aseq(r2[:-1], ('Default', 'nested/sort.py',   PATH_ZIPFILE_PSEUDO))
+        aseq(r3[:-1], ('Package', 'Nested/asset.pth', PATH_ABSOLUTE))
 
 ################ ONLY LOAD TESTS WHEN DEVELOPING NOT ON START UP ###############
 
