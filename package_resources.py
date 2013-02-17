@@ -31,6 +31,7 @@ __all__ =  ['PATH_ABSOLUTE',
             'ST3',
             'abs_path_to_open_file_path',
             'decompose_package_file_path',
+            'executable_relative_packages_path',
             'package_file_binary_contents',
             'package_file_contents',
             'package_file_exists',
@@ -81,11 +82,12 @@ def platform_specifier():
     if platform == 'Osx': return 'OSX'
     return platform
 
-def executable_relative_packages():
+def executable_relative_packages_path():
     return join(dirname(sublime.executable_path()), 'Packages')
 
 def zipped_package_locations():
-    return [sublime.installed_packages_path(), executable_relative_packages()]
+    return [ sublime.installed_packages_path(),
+             executable_relative_packages_path() ]
 
 ################################# PATH HELPERS #################################
 
@@ -345,7 +347,7 @@ def permute_selection(f, v, e):
             self.assertTrue(isinstance(ars, unicode))
 
         # Able to use PATH_ZIPFILE_PSEUDO (used by module.__file__)
-        a= len( (package_file_contents(( executable_relative_packages() +
+        a= len( (package_file_contents(( executable_relative_packages_path() +
                                 "/Default.sublime-package/sort.py"))))
 
         self.assertEquals(a, nlen)
