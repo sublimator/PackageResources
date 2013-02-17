@@ -29,7 +29,7 @@ __all__ =  ['PATH_ABSOLUTE',
             'PATH_ZIPFILE_PSEUDO',
             'ST2',
             'ST3',
-            'abs_path_to_open_file_path',
+            'norm_path_to_sublime_style',
             'decompose_package_file_path',
             'executable_relative_packages_path',
             'package_file_binary_contents',
@@ -127,7 +127,7 @@ def decompose_package_file_path(pth):
         pkg, relative = pth.split("/", 1)
         return pkg, relative, PATH_ABSOLUTE, sublime.packages_path()
 
-def abs_path_to_open_file_path(fn):
+def norm_path_to_sublime_style(fn):
     """
     Formats a path as /C/some/path/on/windows/no/colon.txt that is suitable to
     be passed as the `file` arg to the `open_file` command.
@@ -154,8 +154,9 @@ def package_file_path_to_open_file_path(file_name):
     
     """
 
+    file_name = norm_path_to_sublime_style(file_name)
     pkg, relative, pth_type, _ = decompose_package_file_path(file_name)
-    return ( abs_path_to_open_file_path(file_name) if pth_type is PATH_ABSOLUTE else
+    return ( file_name if pth_type is PATH_ABSOLUTE else
              "${packages}/%s/%s" % (pkg, relative) )
 
 ############################ PACKAGE_FILE_* HELPERS ############################
@@ -263,6 +264,7 @@ def create_virtual_package_lookup():
 
     return dict(mapping)
 
+# TODO: a `yielding` helper, can be used to search for a single file?
 def list_virtual_package_folder(merged_package_info, matcher=None):
     zip_file = merged_package_info['zip_path']
     folder = merged_package_info['folder_path']
@@ -298,7 +300,58 @@ def list_virtual_package_folder(merged_package_info, matcher=None):
 
     return contents
 
+def glob_packages (
+        file_type='sublime-keymap',
+        package_sort_key=None,
+        ignored_packages=True,
+        ):
+    """
+    
+    Will yield files in form PATH_ABSOLUTE or PATH_ZIPFILE_PSEUDO which
+    have good performance characteristics when using package_file_contents.
+    
+    """
+    
+    if ignored_packages and ignored_packages is not True:
+        ignored_packages = sublime.load_settings (
+            'Preferences.sublime-settings').get('ignored_packages')
+
+    if isinstance(file_type, str):
+        file_type = file_type.replace('%PLATFORM%', platform_specifier())
+        if '.' not in file_type:
+            file_type = '.*\.%s$' % file_type
+        file_type = re.compile(file_type)
+
+    lookup =  create_virtual_package_lookup()
+
+    for pkg in sorted(lookup, key=package_sort_key):
+        pkg_info = lookup[pkg]
+        found_files = []
+
+        for f, file_info in sorted (
+                    list_virtual_package_folder(pkg_info,
+                    matcher=file_type.match ).items(), key=lambda t:t[0] ):
+
+            if file_info['folder_path']:
+                found_files.append(file_info['folder_path'])
+            else:
+                found_files.append(file_info['zip_path'])
+
+        for f in found_files:
+            yield pkg, splitext(basename(f))[0], f
+
 ##################################### TESTS ####################################
+
+class GlobPackageTests(unittest.TestCase):
+    """
+    
+    These tests are pretty vague, but at least exercise the code somewhat
+    
+    """
+    def test_glob_packages(self):
+        # pprint.pprint (
+        list(glob_packages())
+        # )
 
 class Tests(unittest.TestCase):
     """
@@ -375,9 +428,9 @@ def permute_selection(f, v, e):
 ################ ONLY LOAD TESTS WHEN DEVELOPING NOT ON START UP ###############
 
 try:               times_module_has_been_reloaded  += 1
-except NameError:  times_module_has_been_reloaded  =  0       #<em>re</em>loaded
+except NameError:  times_module_has_been_reloaded  = -1       #<em>re</em>loaded
 
-if times_module_has_been_reloaded:
+if 0 and times_module_has_been_reloaded:
     target = __name__
 
     if nose:
